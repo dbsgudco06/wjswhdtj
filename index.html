@@ -6109,6 +6109,7 @@ body.view-emotion.tools-disabled .tool-toggle-floating {
   width: max-content;
   white-space: nowrap;
   will-change: transform;
+  backface-visibility: hidden;
   animation-duration: var(--row-speed, 88s);
   animation-timing-function: linear;
   animation-iteration-count: infinite;
@@ -7046,7 +7047,8 @@ function renderCloud(focusWord = cloudFocusWord) {
     let activeEvadeRow = null;
     let activePointerWord = null;
     let flatPointer = null;
-    let flatHoverFrame = 0;
+    let flatHoverTimer = 0;
+    let flatStageBounds = stage.getBoundingClientRect();
     function setActivePointerWord(nextWord) {
       if (activePointerWord === nextWord) return;
       activePointerWord?.classList.remove("is-pointer-target");
@@ -7060,14 +7062,12 @@ function renderCloud(focusWord = cloudFocusWord) {
       activeEvadeRow?.__setRowEvading?.(true);
     }
     function checkFlatPointerTarget() {
-      flatHoverFrame = 0;
       if (flatPointer) {
-        const bounds = stage.getBoundingClientRect();
         if (
-          flatPointer.x < bounds.left ||
-          flatPointer.x > bounds.right ||
-          flatPointer.y < bounds.top ||
-          flatPointer.y > bounds.bottom
+          flatPointer.x < flatStageBounds.left ||
+          flatPointer.x > flatStageBounds.right ||
+          flatPointer.y < flatStageBounds.top ||
+          flatPointer.y > flatStageBounds.bottom
         ) {
           clearFlatPointer();
           return;
@@ -7078,20 +7078,24 @@ function renderCloud(focusWord = cloudFocusWord) {
       const nextRow = nextWord?.closest?.(".cloud-row") || null;
       setActivePointerWord(nextWord || null);
       setActiveEvadeRow(nextRow);
-      if (flatPointer) flatHoverFrame = window.requestAnimationFrame(checkFlatPointerTarget);
+      if (flatPointer) scheduleFlatPointerCheck(70);
     }
-    function queueFlatPointerCheck() {
-      if (flatHoverFrame) return;
-      flatHoverFrame = window.requestAnimationFrame(checkFlatPointerTarget);
+    function scheduleFlatPointerCheck(delay = 0) {
+      if (flatHoverTimer) return;
+      flatHoverTimer = window.setTimeout(() => {
+        flatHoverTimer = 0;
+        window.requestAnimationFrame(checkFlatPointerTarget);
+      }, delay);
     }
     function updateFlatPointer(event) {
+      flatStageBounds = stage.getBoundingClientRect();
       flatPointer = { x: event.clientX, y: event.clientY };
-      queueFlatPointerCheck();
+      scheduleFlatPointerCheck();
     }
     function clearFlatPointer() {
       flatPointer = null;
-      if (flatHoverFrame) window.cancelAnimationFrame(flatHoverFrame);
-      flatHoverFrame = 0;
+      if (flatHoverTimer) window.clearTimeout(flatHoverTimer);
+      flatHoverTimer = 0;
       setActivePointerWord(null);
       setActiveEvadeRow(null);
     }
@@ -7128,13 +7132,19 @@ function renderCloud(focusWord = cloudFocusWord) {
 
       let evadeFrame = 0;
       let currentEvadeRate = 1;
+      let appliedEvadeRate = 1;
+      let trackAnimations = null;
       function setTrackPlaybackRate(rate) {
         if (typeof track.getAnimations !== "function") return;
-        track.getAnimations().forEach(animation => {
+        const roundedRate = Math.round(rate * 100) / 100;
+        if (Math.abs(roundedRate - appliedEvadeRate) < .02) return;
+        appliedEvadeRate = roundedRate;
+        trackAnimations ||= track.getAnimations();
+        trackAnimations.forEach(animation => {
           if (typeof animation.updatePlaybackRate === "function") {
-            animation.updatePlaybackRate(rate);
+            animation.updatePlaybackRate(roundedRate);
           } else {
-            animation.playbackRate = rate;
+            animation.playbackRate = roundedRate;
           }
         });
       }
@@ -8710,7 +8720,7 @@ updateHeroScrollEffect();
     const radius = eraserRadius();
     showEraserCursor(toPoint);
     const stageRect = stage.getBoundingClientRect();
-    const spacing = Math.max(8, radius * .62);
+    const spacing = Math.max(2.5, Math.min(6, state.size * .75));
     const pointSamples = sampleLine(fromPoint, toPoint, spacing);
     const clientSamples = pointSamples.map(point => ({
       x: stageRect.left + point.x,
