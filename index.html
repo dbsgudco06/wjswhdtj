@@ -6066,7 +6066,7 @@ body.view-emotion.tools-disabled .tool-toggle-floating {
     0 10px 28px rgba(0,0,0,.58) !important;
 }
 
-#cloud:not(.is-marquee) .cloud-word {
+#cloudWords:not(.is-marquee) .cloud-word {
   position: absolute !important;
   pointer-events: none !important;
   left: var(--globe-x, 50%) !important;
@@ -6084,11 +6084,11 @@ body.view-emotion.tools-disabled .tool-toggle-floating {
   animation: globeWordDrift var(--dur, 9s) ease-in-out infinite !important;
 }
 
-#cloud.is-marquee {
+#cloudWords.is-marquee {
   overflow: hidden !important;
 }
 
-#cloud.is-marquee .cloud-globe-shell {
+#cloudWords.is-marquee .cloud-globe-shell {
   display: none !important;
 }
 
@@ -6151,8 +6151,19 @@ body.view-emotion.tools-disabled .tool-toggle-floating {
   font-weight: 540 !important;
   letter-spacing: -.04em !important;
   line-height: 1 !important;
+  transition:
+    color .24s ease,
+    text-shadow .24s ease,
+    transform .32s cubic-bezier(.18,.84,.18,1) !important;
 }
 
+#cloud .cloud-stage.is-flat .cloud-row .cloud-word,
+#cloud .cloud-stage.is-flat .cloud-row .cloud-word.major,
+#cloud .cloud-stage.is-flat .cloud-row .cloud-word.is-focus {
+  color: rgba(245,248,255,.68) !important;
+  font-weight: 540 !important;
+  text-shadow: none !important;
+}
 
 #cloud .cloud-advice {
   position: absolute;
@@ -6194,11 +6205,12 @@ body.view-emotion.tools-disabled .tool-toggle-floating {
   }
 }
 
-#cloud .cloud-stage.is-flat .cloud-row .cloud-word:hover {
+#cloud .cloud-stage.is-flat .cloud-row .cloud-word.is-pointer-target {
   color: rgba(255,255,255,1) !important;
   text-shadow:
     0 0 calc(var(--word-size, 28px) * .55) rgba(255,255,255,.18),
-    0 10px 28px rgba(0,0,0,.58) !important;
+  0 10px 28px rgba(0,0,0,.58) !important;
+  transform: translateY(-.12em) !important;
 }
 
 @keyframes cloudMarqueeLeft {
@@ -6333,6 +6345,20 @@ body.view-emotion:not(.tools-disabled) .emotion-tool-tab {
   text-shadow:
     0 0 calc(var(--word-size, 28px) * .5) rgba(255,255,255,.18),
     0 12px 34px rgba(0,0,0,.64) !important;
+}
+
+#cloudWords:not(.is-marquee) .cloud-word.is-long-focus {
+  max-width: min(86vw, 720px) !important;
+  white-space: nowrap !important;
+  line-height: .92 !important;
+  letter-spacing: -.04em !important;
+  font-size: clamp(42px, 7.2vw, 78px) !important;
+}
+
+@media (max-width: 860px) {
+  #cloudWords:not(.is-marquee) .cloud-word.is-long-focus {
+    font-size: clamp(28px, 7.8vw, 46px) !important;
+  }
 }
 
 </style>
@@ -6880,6 +6906,10 @@ $("#saveBtn").addEventListener("click", () => {
 
 
 let cloudFocusWord = null;
+let cloudFlatLayoutFocus = null;
+let cloudPreserveFlatLayout = false;
+let cloudFlatAnimationSnapshot = null;
+let stopCloudFlatHoverWatcher = null;
 
 const cloudRelatedGroups = [
   ["불안", "걱정", "긴장", "초조", "두려움", "막막함", "압박", "마감", "미래", "발표", "실수", "부담", "불확실"],
@@ -6939,10 +6969,14 @@ function renderCloud(focusWord = cloudFocusWord) {
   }
 
   const focused = cloudFocusWord;
+  if (!cloudFlatLayoutFocus || !entries.some(([word]) => word === cloudFlatLayoutFocus)) {
+    cloudFlatLayoutFocus = focused;
+  }
+  const layoutFocus = isFlat ? cloudFlatLayoutFocus : focused;
   const ordered = [...entries].sort((a,b) => {
-    if (a[0] === focused) return -1;
-    if (b[0] === focused) return 1;
-    const related = getCloudRelatedScore(focused, b[0]) - getCloudRelatedScore(focused, a[0]);
+    if (a[0] === layoutFocus) return -1;
+    if (b[0] === layoutFocus) return 1;
+    const related = getCloudRelatedScore(layoutFocus, b[0]) - getCloudRelatedScore(layoutFocus, a[0]);
     if (Math.abs(related) > .001) return related;
     return b[1] - a[1] || a[0].length - b[0].length;
   });
@@ -6963,7 +6997,9 @@ function renderCloud(focusWord = cloudFocusWord) {
 
   const items = ordered.map(([word, count], idx) => {
     const letters = Array.from(word).length;
+    const visibleLetters = Array.from(word.replace(/\s+/g, "")).length;
     const isPhrase = word.includes(" ") || letters > 6;
+    const isLongFocusWord = word === "나만 그런 게 아니었다";
     const countWeight = max === min ? 1 : (count - min) / (max - min);
     const rankWeight = 1 - idx / Math.max(1, ordered.length - 1);
     let emphasis = clamp(countWeight * .76 + rankWeight * .24, 0, 1);
@@ -6972,7 +7008,18 @@ function renderCloud(focusWord = cloudFocusWord) {
     const maxSize = isMobile ? 70 : 118;
     const minSize = isMobile ? 10.5 : 12;
     let size = clamp((minSize + Math.pow(emphasis, 1.72) * (maxSize - minSize)) * lengthFactor, minSize, maxSize);
-    if (word === focused) size = isMobile ? 82 : 132;
+    if (word === focused) {
+      size = isMobile ? 82 : 132;
+      if (isLongFocusWord) {
+        size = isMobile ? 42 : 76;
+      } else if (visibleLetters === 6) {
+        size = Math.min(size, isMobile ? 70 : 112);
+      } else if (visibleLetters === 7) {
+        size = Math.min(size, isMobile ? 60 : 98);
+      } else if (visibleLetters >= 8) {
+        size = Math.min(size, isMobile ? 54 : 88);
+      }
+    }
     else if (idx === 0) size = clamp(size * 1.05, isMobile ? 30 : 42, isMobile ? 78 : 126);
     if (idx > 24) size *= .86;
     if (idx > 42) size *= .76;
@@ -6980,23 +7027,97 @@ function renderCloud(focusWord = cloudFocusWord) {
     const fontWeight = Math.round(clamp(260 + Math.pow(emphasis, 1.2) * 620, 260, 880));
     const w = measure(word, size);
     const h = size * .98;
-    return { word, count, idx, isPhrase, emphasis, size, alpha, fontWeight, w, h };
+    return { word, count, idx, isPhrase, isLongFocusWord, emphasis, size, alpha, fontWeight, w, h };
   });
 
+  stopCloudFlatHoverWatcher?.();
+  stopCloudFlatHoverWatcher = null;
   cloud.innerHTML = "";
 
   if (isFlat) {
     cloud.classList.add("is-marquee");
+    const restoreFlatAnimation = cloudPreserveFlatLayout && Array.isArray(cloudFlatAnimationSnapshot)
+      ? cloudFlatAnimationSnapshot
+      : null;
     const rowCount = isMobile ? 5 : 6;
     const rows = Array.from({ length: rowCount }, () => []);
     items.forEach((item, idx) => rows[idx % rowCount].push(item));
 
+    let activeEvadeRow = null;
+    let activePointerWord = null;
+    let flatPointer = null;
+    let flatHoverFrame = 0;
+    function setActivePointerWord(nextWord) {
+      if (activePointerWord === nextWord) return;
+      activePointerWord?.classList.remove("is-pointer-target");
+      activePointerWord = nextWord;
+      activePointerWord?.classList.add("is-pointer-target");
+    }
+    function setActiveEvadeRow(nextRow) {
+      if (activeEvadeRow === nextRow) return;
+      activeEvadeRow?.__setRowEvading?.(false);
+      activeEvadeRow = nextRow;
+      activeEvadeRow?.__setRowEvading?.(true);
+    }
+    function checkFlatPointerTarget() {
+      flatHoverFrame = 0;
+      if (flatPointer) {
+        const bounds = stage.getBoundingClientRect();
+        if (
+          flatPointer.x < bounds.left ||
+          flatPointer.x > bounds.right ||
+          flatPointer.y < bounds.top ||
+          flatPointer.y > bounds.bottom
+        ) {
+          clearFlatPointer();
+          return;
+        }
+      }
+      const target = flatPointer ? document.elementFromPoint(flatPointer.x, flatPointer.y) : null;
+      const nextWord = stage.contains(target) ? target?.closest?.("#cloudWords .cloud-word") : null;
+      const nextRow = nextWord?.closest?.(".cloud-row") || null;
+      setActivePointerWord(nextWord || null);
+      setActiveEvadeRow(nextRow);
+      if (flatPointer) flatHoverFrame = window.requestAnimationFrame(checkFlatPointerTarget);
+    }
+    function queueFlatPointerCheck() {
+      if (flatHoverFrame) return;
+      flatHoverFrame = window.requestAnimationFrame(checkFlatPointerTarget);
+    }
+    function updateFlatPointer(event) {
+      flatPointer = { x: event.clientX, y: event.clientY };
+      queueFlatPointerCheck();
+    }
+    function clearFlatPointer() {
+      flatPointer = null;
+      if (flatHoverFrame) window.cancelAnimationFrame(flatHoverFrame);
+      flatHoverFrame = 0;
+      setActivePointerWord(null);
+      setActiveEvadeRow(null);
+    }
+    stopCloudFlatHoverWatcher = clearFlatPointer;
+    stage.onpointerenter = updateFlatPointer;
+    stage.onpointermove = updateFlatPointer;
+    stage.onpointerleave = clearFlatPointer;
+    function captureFlatAnimationSnapshot() {
+      cloudFlatAnimationSnapshot = [...cloud.querySelectorAll(".cloud-row")].map((row, fallbackIdx) => {
+        const track = row.querySelector(".cloud-track");
+        const animation = track?.getAnimations?.()[0];
+        return {
+          rowIdx: Number(row.dataset.rowIdx || fallbackIdx),
+          currentTime: Number(animation?.currentTime || 0)
+        };
+      });
+    }
+
     rows.forEach((rowItems, rowIdx) => {
       const row = document.createElement("div");
       row.className = "cloud-row";
+      row.dataset.rowIdx = `${rowIdx}`;
       row.dataset.dir = rowIdx % 2 === 0 ? "left" : "right";
       row.style.setProperty("--row-top", `${((rowIdx + .5) / rowCount * 100).toFixed(3)}%`);
-      row.style.setProperty("--row-speed", `${(96 + rowIdx * 10).toFixed(1)}s`);
+      const rowSpeed = 96 + rowIdx * 10;
+      row.style.setProperty("--row-speed", `${rowSpeed.toFixed(1)}s`);
 
       const track = document.createElement("div");
       track.className = "cloud-track";
@@ -7005,16 +7126,61 @@ function renderCloud(focusWord = cloudFocusWord) {
       const minItems = isMobile ? 20 : 28;
       while (sequence.length < minItems) sequence.push(...rowItems);
 
+      let evadeFrame = 0;
+      let currentEvadeRate = 1;
+      function setTrackPlaybackRate(rate) {
+        if (typeof track.getAnimations !== "function") return;
+        track.getAnimations().forEach(animation => {
+          if (typeof animation.updatePlaybackRate === "function") {
+            animation.updatePlaybackRate(rate);
+          } else {
+            animation.playbackRate = rate;
+          }
+        });
+      }
+      function animateRowRate(targetRate) {
+        window.cancelAnimationFrame(evadeFrame);
+        const startRate = currentEvadeRate;
+        const startTime = performance.now();
+        const duration = targetRate > startRate ? 220 : 380;
+        const ease = t => 1 - Math.pow(1 - t, 3);
+        function step(now) {
+          const t = clamp((now - startTime) / duration, 0, 1);
+          currentEvadeRate = startRate + (targetRate - startRate) * ease(t);
+          setTrackPlaybackRate(currentEvadeRate);
+          if (t < 1) evadeFrame = window.requestAnimationFrame(step);
+        }
+        evadeFrame = window.requestAnimationFrame(step);
+      }
+      function setRowEvading(isEvading) {
+        if (isEvading) {
+          row.classList.add("is-evading");
+          animateRowRate(isMobile ? 1.85 : 2.55);
+        } else {
+          row.classList.remove("is-evading");
+          animateRowRate(1);
+        }
+      }
+      row.__setRowEvading = setRowEvading;
+
       function makeWordButton(item) {
         const span = document.createElement("button");
         span.type = "button";
-        span.className = `cloud-word ${item.word === focused ? "is-focus" : ""} ${item.idx < 7 ? "major" : ""} ${item.isPhrase ? "phrase" : ""}`;
+        span.className = `cloud-word ${item.word === focused ? "is-focus" : ""} ${item.idx < 7 ? "major" : ""} ${item.isPhrase ? "phrase" : ""} ${item.word === focused && item.isLongFocusWord ? "is-long-focus" : ""}`;
         span.textContent = item.word;
         span.setAttribute("aria-label", `${item.word}`);
         span.style.setProperty("--word-alpha", clamp(.46 + item.emphasis * .42, .46, .88).toFixed(3));
         span.style.setProperty("--word-glow", clamp(.012 + item.emphasis * .10, .012, .11).toFixed(3));
+        span.addEventListener("pointerenter", updateFlatPointer);
+        span.addEventListener("pointermove", updateFlatPointer);
+        span.addEventListener("focus", () => setRowEvading(true));
+        span.addEventListener("blur", () => setRowEvading(false));
         span.addEventListener("click", (event) => {
           event.stopPropagation();
+          cloudFlatLayoutFocus = layoutFocus;
+          cloudPreserveFlatLayout = true;
+          captureFlatAnimationSnapshot();
+          clearFlatPointer();
           cloudFocusWord = item.word;
           stage.classList.remove("is-flat");
           renderCloud(item.word);
@@ -7032,11 +7198,28 @@ function renderCloud(focusWord = cloudFocusWord) {
 
       row.appendChild(track);
       cloud.appendChild(row);
+      const savedAnimation = restoreFlatAnimation?.find(saved => saved.rowIdx === rowIdx);
+      if (savedAnimation && Number.isFinite(savedAnimation.currentTime)) {
+        requestAnimationFrame(() => {
+          const animation = track.getAnimations?.()[0];
+          if (!animation) return;
+          animation.currentTime = savedAnimation.currentTime;
+          if (typeof animation.updatePlaybackRate === "function") {
+            animation.updatePlaybackRate(1);
+          } else {
+            animation.playbackRate = 1;
+          }
+        });
+      }
     });
+    if (restoreFlatAnimation) cloudFlatAnimationSnapshot = null;
     return;
   }
 
   cloud.classList.remove("is-marquee");
+  stage.onpointerenter = null;
+  stage.onpointermove = null;
+  stage.onpointerleave = null;
   const shell = document.createElement("div");
   shell.className = "cloud-globe-shell";
   cloud.appendChild(shell);
@@ -7109,7 +7292,7 @@ function renderCloud(focusWord = cloudFocusWord) {
     const edge = clamp(Math.sqrt(normX * normX + normY * normY), 0, 1);
     const depth = clamp(1 - edge * .68, .22, 1);
     const span = document.createElement("span");
-    span.className = `cloud-word ${item.word === focused ? "is-focus" : ""} ${idx < 7 ? "major" : ""} ${item.isPhrase ? "phrase" : ""}`;
+    span.className = `cloud-word ${item.word === focused ? "is-focus" : ""} ${idx < 7 ? "major" : ""} ${item.isPhrase ? "phrase" : ""} ${item.word === focused && item.isLongFocusWord ? "is-long-focus" : ""}`;
     span.textContent = item.word;
     span.style.zIndex = `${Math.round(1000 + depth * 400 - idx)}`;
     span.style.setProperty("--word-size", `${picked.size.toFixed(2)}px`);
@@ -7183,8 +7366,14 @@ renderCloud();
   stage.dataset.spreadToggleReady = "true";
   stage.addEventListener("click", (event) => {
     if (stage.classList.contains("is-flat") && event.target.closest(".cloud-word")) return;
+    const willShowFlat = !stage.classList.contains("is-flat");
     stage.classList.toggle("is-flat");
+    if (willShowFlat && !cloudPreserveFlatLayout) {
+      cloudFlatLayoutFocus = cloudFocusWord;
+      cloudFlatAnimationSnapshot = null;
+    }
     renderCloud();
+    if (willShowFlat) cloudPreserveFlatLayout = false;
   });
   window.addEventListener("resize", () => {
     renderCloud();
@@ -7616,7 +7805,7 @@ updateHeroScrollEffect();
       eraseBtn.className = "tool-btn";
       eraseBtn.dataset.mode = "erase";
       eraseBtn.title = "E";
-      eraseBtn.textContent = "Erase E";
+      eraseBtn.textContent = "지우개 E";
       modeRow.appendChild(eraseBtn);
     }
 
@@ -7625,17 +7814,17 @@ updateHeroScrollEffect();
       const eraserGroup = document.createElement("div");
       eraserGroup.className = "tool-group";
       eraserGroup.innerHTML = `
-        <span class="tool-label">Eraser</span>
+        <span class="tool-label">지우개</span>
         <div class="tool-row" data-tool-group="eraser">
-          <button type="button" class="tool-btn active" data-eraser="partial" title="Erase touched parts">partial</button>
-          <button type="button" class="tool-btn" data-eraser="object" title="Erase whole touched item">object</button>
+          <button type="button" class="tool-btn active" data-eraser="partial" title="닿은 부분만 지우기">부분</button>
+          <button type="button" class="tool-btn" data-eraser="object" title="닿은 항목 전체 지우기">전체</button>
         </div>
       `;
       modeGroup.after(eraserGroup);
     }
 
     const hint = hotzone.querySelector(".tool-hint");
-    if (hint) hint.innerHTML = "V select · P draw · T text · E eraser<br>Shift E toggles partial/object erase.";
+    if (hint) hint.innerHTML = "V 선택 · P 그리기 · T 텍스트 · E 지우개<br>Shift + E로 부분/전체 지우개를 전환합니다.";
   }
 
   function ensureToolbar() {
@@ -7689,8 +7878,8 @@ updateHeroScrollEffect();
         <div class="tool-group">
           <span class="tool-label">History</span>
           <div class="tool-row">
-            <button class="tool-btn" data-action="undo">Ctrl Z</button>
-            <button class="tool-btn" data-action="redo">Ctrl Shift Z</button>
+            <button class="tool-btn" data-action="undo">Ctrl + Z</button>
+            <button class="tool-btn" data-action="redo">Ctrl + Shift + Z</button>
           </div>
           <p class="tool-hint">V 선택 · P 그리기 · T 텍스트<br>우측에 마우스를 가져가면 열립니다.</p>
         </div>
